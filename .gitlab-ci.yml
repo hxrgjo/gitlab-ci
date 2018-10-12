@@ -1,0 +1,58 @@
+
+variables:
+  BIN_NAME: test-ci
+  ARTIFACTS_DIR: artifacts
+  GO_PROJECT: gitlab.com/rayli/test-ci
+  GOLANG_VERSION: 1.11.1
+
+stages:
+  - build
+  - test
+  - publish
+
+build-test-ci:
+  image: golang:${GOLANG_VERSION}
+  stage: build
+  script:
+    - echo ${CI_COMMIT_TAG} ${CI_COMMIT_SHA} 
+    - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -v -a -o ${CI_PROJECT_DIR}/${ARTIFACTS_DIR}/${BIN_NAME} -installsuffix cgo -ldflags "-X main.VERSION=${CI_COMMIT_TAG} -X main.COMMIT=${CI_COMMIT_SHA}"
+  artifacts:
+    paths:
+      - ${CI_PROJECT_DIR}/${ARTIFACTS_DIR}
+    expire_in: 1 day
+  only:
+    - tags
+
+build-master-test-ci:
+  image: golang:${GOLANG_VERSION}
+  stage: build
+  script:
+    - echo ${CI_COMMIT_REF_NAME}${CI_JOB_ID} ${CI_COMMIT_SHA} 
+    - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -v -a -o ${CI_PROJECT_DIR}/${ARTIFACTS_DIR}/${BIN_NAME} -installsuffix cgo -ldflags "-X main.VERSION=${CI_COMMIT_REF_NAME}${CI_JOB_ID} -X main.COMMIT=${CI_COMMIT_SHA}"
+  artifacts:
+    paths:
+      - ${CI_PROJECT_DIR}/${ARTIFACTS_DIR}
+    expire_in: 1 day
+  only:
+    - master
+
+test-test-ci:
+  image: golang:${GOLANG_VERSION}
+  stage: test
+  script:
+    - go test -v -cover ./...
+  only:
+    - tags
+    - master
+
+publish-test-ci:
+  stage: publish
+  image: docker:latest
+  variables:
+    DOCKER_DRIVER: overlay2
+  services:
+    - docker:dind
+  script:
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN registry.gitlab.com
+    - docker build -t registry.gitlab.com/rayli/test-ci:${CI_COMMIT_SHA} .
+    - docker push registry.gitlab.com/rayli/test-ci:${CI_COMMIT_SHA}
